@@ -1,0 +1,9 @@
+user enters username and password - done
+
+search for username in database or in a map?
+
+use salt an hash to compare the stored info with the recieved password
+
+generate a player and place them into the correct room
+
+add the ability to speak to other players in the same room
