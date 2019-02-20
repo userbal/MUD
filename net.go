@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net"
@@ -19,24 +20,25 @@ type UandP struct {
 	salt     string
 }
 
-func compareUsernameAndPasswordToDatabase(in *UandP) string {
-	a := readPlayer(in.name)
+func compareUsernameAndPasswordToDatabase(submission *UandP) string {
+	record := readPlayer(submission.name)
 
-	if a.password == "error" {
-		return "Username not found\n"
+	if record.password == "error" {
+		return "Username not found"
 	} else {
-		in.hash = []byte(in.password)
-		salt := []byte(a.salt)
-		hash2 := a.hash
+		salt, err := base64.StdEncoding.DecodeString(record.salt)
+		if err != nil {
+			log.Fatalf("listen failed: %v", err)
+		}
 
-		hash1 := pbkdf2.Key(
-			[]byte(in.hash),
+		submission.hash = pbkdf2.Key(
+			[]byte(submission.password),
 			salt,
 			64*1024,
 			32,
 			sha256.New)
 
-		if subtle.ConstantTimeCompare(hash1, hash2) != 1 {
+		if subtle.ConstantTimeCompare(record.hash, submission.hash) != 1 {
 			return "passwords do not match"
 		} else {
 			return "passwords match"
@@ -44,18 +46,32 @@ func compareUsernameAndPasswordToDatabase(in *UandP) string {
 	}
 }
 
-func loginUser(conn net.Conn) {
+func loginUser(conn net.Conn) *Player {
 	a := getUsernameAndPassword(conn)
 	b := compareUsernameAndPasswordToDatabase(a)
-	fmt.Fprintf(conn, b)
 	switch b {
 	case "passwords match":
-		//initializePlayer(a)
+		player := initializePlayer(a, conn)
+		return player
 	case "passwords do not match":
 		fmt.Fprintf(conn, "incorrect password")
+		loginUser(conn)
 	case "Username not found":
+		fmt.Fprintln(conn, "creating new user")
 		createNewUser(a)
+		loginUser(conn)
 	}
+	player := initializePlayer(a, conn)
+	return player
+}
+
+func initializePlayer(a *UandP, conn net.Conn) *Player {
+	player := new(Player)
+	player.name = a.name
+	player.current_room = Rooms[3001]
+	player.conn = conn
+	player.channel = make(chan eventOUT)
+	return player
 }
 
 func getUsernameAndPassword(conn net.Conn) *UandP {
@@ -105,20 +121,16 @@ func connectionStarter(InCh chan eventIN) {
 			continue
 		}
 
-		//create a player object
-		player := new(Player)
-		player.current_room = Rooms[3001]
-		player.conn = conn
-		player.channel = make(chan eventOUT)
-		loginUser(conn)
-
+		player := loginUser(conn)
 		go playerIn(conn, player, InCh)
 		go playerOUT(conn, player)
+
 	}
 }
 
 func playerIn(conn net.Conn, player *Player, ch chan eventIN) {
 
+	fmt.Fprintf(conn, "\n> ")
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		var query []string
@@ -138,6 +150,7 @@ func playerIn(conn net.Conn, player *Player, ch chan eventIN) {
 			event.query = query
 			event.player = player
 			ch <- *event
+			fmt.Fprintf(conn, "\n> ")
 		}
 
 	}

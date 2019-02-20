@@ -157,8 +157,7 @@ func readPlayer(name string) *UandP {
 
 	row, err := tx.Query("select * from players where name = " + "\"" + name + "\"" + ";")
 	if err != nil {
-		UandP.password = "error"
-		return UandP
+		log.Fatal(err)
 	}
 	defer row.Close()
 	var id int
@@ -174,10 +173,11 @@ func readPlayer(name string) *UandP {
 		log.Fatal(err)
 	}
 
+	if UandP.name == "" {
+		UandP.password = "error"
+	}
+
 	tx.Commit()
-	fmt.Println(UandP.name)
-	fmt.Println(UandP.hash)
-	fmt.Println(UandP.salt)
 	return UandP
 }
 
@@ -195,7 +195,13 @@ func createNewUser(UandP *UandP) *UandP {
 		32,
 		sha256.New)
 
-	UandP.password = string(UandP.password)
+	UandP.password = string(UandP.hash)
+
+	fmt.Println("\nsalt:")
+	fmt.Println(UandP.salt)
+
+	fmt.Println("\npassword:")
+	fmt.Println(UandP.password)
 
 	db, err := sql.Open("sqlite3", "world.db")
 	if err != nil {
@@ -207,8 +213,7 @@ func createNewUser(UandP *UandP) *UandP {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	_, err = tx.Exec("insert into players(name, hash, salt) values (" + UandP.name + "," + UandP.password + "," + UandP.salt + ");")
+	_, err = tx.Exec("insert into players(name, salt, hash) values (" + "\"" + UandP.name + "\"" + "," + "\"" + UandP.salt + "\"" + "," + "\"" + UandP.password + "\"" + ");")
 	if err != nil {
 		log.Fatal(err)
 	}
