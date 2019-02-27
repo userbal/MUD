@@ -5,9 +5,9 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
-	"fmt"
 	"log"
 
+	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/crypto/pbkdf2"
 )
 
@@ -23,11 +23,59 @@ type Room struct {
 	Name        string
 	Description string
 	Exits       [6]Exit
+	Players     map[string]*Player
 }
 
 type Exit struct {
 	To          *Room
 	Description string
+}
+
+func readDB() {
+
+	db, err := sql.Open("sqlite3", "world.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	tx, err := db.Begin()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	zones := readAllZones(tx)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	tx.Commit()
+
+	tx, err = db.Begin()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	Rooms = readAllRooms(tx, zones)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	//readRoom(tx)
+	tx.Commit()
+
+	tx, err = db.Begin()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	readAllExits(tx, Rooms)
+	if err != nil {
+		log.Fatal(err)
+	}
+	//readRoom(tx)
+	tx.Commit()
+
 }
 
 func readAllZones(db *sql.Tx) map[int]*Zone {
@@ -70,6 +118,7 @@ func readAllRooms(db *sql.Tx, zones map[int]*Zone) map[int]*Room {
 
 	for rows.Next() {
 		r := new(Room)
+		r.Players = make(map[string]*Player)
 		//var id int
 		var zone_id int
 		//var name string
@@ -197,12 +246,6 @@ func createNewUser(UandP *UandP) *UandP {
 
 	UandP.password = string(UandP.hash)
 
-	fmt.Println("\nsalt:")
-	fmt.Println(UandP.salt)
-
-	fmt.Println("\npassword:")
-	fmt.Println(UandP.password)
-
 	db, err := sql.Open("sqlite3", "world.db")
 	if err != nil {
 		log.Fatal(err)
@@ -219,5 +262,6 @@ func createNewUser(UandP *UandP) *UandP {
 	}
 
 	tx.Commit()
+	log.Printf("New User Created %v", UandP.name)
 	return UandP
 }
